@@ -2,4 +2,7 @@ bind_addr = ":8080"
 log_level = "debug"
 
 [store]
-database_url = "postgres://user:password@localhost:5433/canteen?sslmode=disable"
+database_url = "postgres://user:password@localhost:5432/canteen?sslmode=disable"
+
+#Ayana port 5432
+#Syrkhan port 5433
