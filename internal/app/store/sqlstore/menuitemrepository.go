@@ -13,3 +13,12 @@ func (r *MenuItemRepository) Create(m *model.MenuItem) error {
 	}
 	return nil
 }
+
+func (r *MenuItemRepository) Delete(id int) error {
+	_, err := r.store.db.Exec("DELETE FROM menu_items WHERE id = $1", id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

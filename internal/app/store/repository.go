@@ -11,3 +11,9 @@ type UserRepository interface {
 type MenuItemRepository interface {
 	Create(*model.MenuItem) error
 }
+
+type OrderRepository interface {
+}
+
+type OrderItemRepository interface {
+}

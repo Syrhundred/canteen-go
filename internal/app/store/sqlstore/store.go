@@ -7,9 +7,11 @@ import (
 )
 
 type Store struct {
-	db                 *sql.DB
-	UserRepository     *UserRepository
-	MenuItemRepository *MenuItemRepository
+	db                  *sql.DB
+	UserRepository      *UserRepository
+	MenuItemRepository  *MenuItemRepository
+	OrderRepository     *OrderRepository
+	OrderItemRepository *OrderItemRepository
 }
 
 func New(db *sql.DB) *Store {
@@ -40,4 +42,24 @@ func (s *Store) MenuItem() store.MenuItemRepository {
 	}
 
 	return s.MenuItemRepository
+}
+
+func (s *Store) Order() store.OrderRepository {
+	if s.OrderRepository != nil {
+		return s.OrderRepository
+	}
+
+	s.OrderRepository = &OrderRepository{store: s}
+
+	return s.OrderRepository
+}
+
+func (s *Store) OrderItem() store.OrderItemRepository {
+	if s.OrderItemRepository != nil {
+		return s.OrderItemRepository
+	}
+
+	s.OrderItemRepository = &OrderItemRepository{store: s}
+
+	return s.OrderItemRepository
 }
