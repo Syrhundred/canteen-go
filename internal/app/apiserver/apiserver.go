@@ -3,8 +3,8 @@ package apiserver
 import (
 	"canteen-go/internal/app/store/sqlstore"
 	"database/sql"
-	"net/http"
 	"github.com/gorilla/sessions"
+	"net/http"
 )
 
 func Start(config *Config) error {
