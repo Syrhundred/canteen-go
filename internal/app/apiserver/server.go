@@ -61,7 +61,8 @@ func (s *server) configureRouter() {
 
 	private := s.router.PathPrefix("/private").Subrouter()
 	private.Use(s.authenticateUser)
-	private.HandleFunc("/whoam", s.handleWhoami()).Methods("GET")
+	private.HandleFunc("/whoami", s.handleWhoami()).Methods("GET")
+	private.HandleFunc("/menuItem", s.handleMenuItemCreate()).Methods("POST")
 }
 
 func (s *server) setRequestID(next http.Handler) http.Handler {
@@ -119,6 +120,42 @@ func (s *server) authenticateUser(next http.Handler) http.Handler {
 func (s *server) handleWhoami() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		s.respond(w, r, http.StatusOK, r.Context().Value(ctxKeyUser).(*model.User))
+	}
+}
+
+func (s *server) handleMenuItemCreate() http.HandlerFunc {
+	type request struct {
+		Name        string `json:"name"`
+		Price       int    `json:"price"`
+		Description string `json:"description"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		req := &request{}
+		if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+			s.error(w, r, http.StatusBadRequest, err)
+			return
+		}
+
+		// Валидация данных
+		if req.Price < 0 {
+			s.error(w, r, http.StatusBadRequest, errors.New("price must be positive"))
+			return
+		}
+
+		// Создание нового продукта
+		menuItem := &model.MenuItem{
+			Name:        req.Name,
+			Price:       req.Price,
+			Description: req.Description,
+		}
+
+		// Сохранение продукта в базе данных
+		if err := s.store.MenuItem().Create(menuItem); err != nil {
+			s.error(w, r, http.StatusUnprocessableEntity, err)
+			return
+		}
+
+		s.respond(w, r, http.StatusCreated, menuItem)
 	}
 }
 

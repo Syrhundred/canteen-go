@@ -7,3 +7,7 @@ type UserRepository interface {
 	Find(int) (*model.User, error)
 	FindByEmail(string) (*model.User, error)
 }
+
+type MenuItemRepository interface {
+	Create(*model.MenuItem) error
+}
