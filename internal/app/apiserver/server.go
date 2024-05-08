@@ -59,10 +59,104 @@ func (s *server) configureRouter() {
 	s.router.HandleFunc("/users", s.handleUsersCreate()).Methods("POST")
 	s.router.HandleFunc("/sessions", s.handleSessionsCreate()).Methods("POST")
 
+	admin := s.router.PathPrefix("/admin").Subrouter()
+	admin.Use(s.authenticateUser)
+	admin.Use(s.checkAdmin)
+	admin.HandleFunc("/menuItem", s.handleMenuItemCreate()).Methods("POST")
+
 	private := s.router.PathPrefix("/private").Subrouter()
 	private.Use(s.authenticateUser)
 	private.HandleFunc("/whoami", s.handleWhoami()).Methods("GET")
-	private.HandleFunc("/menuItem", s.handleMenuItemCreate()).Methods("POST")
+	private.HandleFunc("/orders", s.handleCreateOrder()).Methods("POST")
+}
+
+func (s *server) handleCreateOrder() http.HandlerFunc {
+	type respondOrder struct {
+		Id         int                `json:"id"`
+		OrderItems []*model.OrderItem `json:"order_item"`
+		CreatedAt  time.Time          `json:"created_At"`
+		TotalPrice int                `json:"total_price"`
+	}
+
+	type requests struct {
+		MenuItemId []int `json:"menu_item_id"`
+		Quantity   []int `json:"quantity"`
+	}
+
+	return func(writer http.ResponseWriter, request *http.Request) {
+		userId, _ := s.getUserId(writer, request)
+
+		req := &requests{}
+		if err := json.NewDecoder(request.Body).Decode(req); err != nil {
+			s.error(writer, request, http.StatusBadRequest, err)
+			return
+		}
+
+		var totalAmount int
+		for i := 0; i < len(req.MenuItemId); i++ {
+			price := s.store.MenuItem().GetPrice(req.MenuItemId[i])
+			s.logger.Info(price, req.MenuItemId[i])
+			totalAmount += price * req.Quantity[i]
+		}
+
+		o := &model.Order{
+			UserId:      userId,
+			TotalAmount: totalAmount,
+		}
+
+		exception := s.store.Order().Create(o)
+		if exception != nil {
+			s.error(writer, request, http.StatusUnprocessableEntity, exception)
+			return
+		}
+
+		var orderItems []*model.OrderItem
+
+		for i := 0; i < len(req.MenuItemId); i++ {
+			mi := &model.OrderItem{
+				OrderId:    o.ID,
+				MenuItemId: req.MenuItemId[i],
+				Quantity:   req.Quantity[i],
+			}
+
+			if err := s.store.OrderItem().Create(mi); err != nil {
+				if e := s.store.Order().Delete(o.ID); e != nil {
+					s.error(writer, request, http.StatusInternalServerError, e)
+					return
+				}
+				s.error(writer, request, http.StatusUnprocessableEntity, err)
+				return
+			}
+
+			orderItems = append(orderItems, mi)
+		}
+
+		respondOrder := respondOrder{
+			Id:         o.ID,
+			CreatedAt:  o.CreatedAt,
+			TotalPrice: totalAmount,
+			OrderItems: orderItems,
+		}
+
+		s.respond(writer, request, http.StatusCreated, respondOrder)
+	}
+}
+
+func (s *server) checkAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, ok := r.Context().Value(ctxKeyUser).(*model.User)
+		if !ok {
+			s.error(w, r, http.StatusUnauthorized, errors.New("unauthorized access: missing user information"))
+			return
+		}
+		s.logger.Info(u)
+		if u.Role != "admin" {
+			s.error(w, r, http.StatusForbidden, errors.New("insufficient privileges: requires admin role"))
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *server) setRequestID(next http.Handler) http.Handler {
@@ -141,8 +235,6 @@ func (s *server) handleMenuItemCreate() http.HandlerFunc {
 			s.error(w, r, http.StatusBadRequest, errors.New("price must be positive"))
 			return
 		}
-
-		// Создание нового продукта
 		menuItem := &model.MenuItem{
 			Name:        req.Name,
 			Price:       req.Price,
@@ -175,6 +267,7 @@ func (s *server) handleUsersCreate() http.HandlerFunc {
 		u := &model.User{
 			Email:    req.Email,
 			Password: req.Password,
+			Role:     "user",
 		}
 		if err := s.store.User().Create(u); err != nil {
 			s.error(w, r, http.StatusUnprocessableEntity, err)
@@ -230,4 +323,22 @@ func (s *server) respond(w http.ResponseWriter, r *http.Request, code int, data 
 	if data != nil {
 		json.NewEncoder(w).Encode(data)
 	}
+}
+
+func (s *server) getUserId(writer http.ResponseWriter, request *http.Request) (int, error) {
+	session, err := s.sessionStore.Get(request, sessionName)
+
+	if err != nil {
+		s.error(writer, request, http.StatusInternalServerError, err)
+		return 0, err
+	}
+
+	userId, authorized := session.Values["user_id"]
+
+	if !authorized {
+		s.error(writer, request, http.StatusUnauthorized, errNotAuthenticated)
+		return 0, nil
+	}
+
+	return userId.(int), nil
 }

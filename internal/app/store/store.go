@@ -3,6 +3,6 @@ package store
 type Store interface {
 	User() UserRepository
 	MenuItem() MenuItemRepository
-	OrderRepository() OrderRepository
-	OrderItemRepository() OrderItemRepository
+	Order() OrderRepository
+	OrderItem() OrderItemRepository
 }
